@@ -8,13 +8,13 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #0f1117; color: #e1e4e8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
   h1 { margin: 12px 0 6px; font-size: 22px; font-weight: 600; color: #c9d1d9; }
-  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; justify-content: center; }
-  .control-section { display: flex; gap: 12px; align-items: center; padding: 4px 12px; border: 1px solid #21262d; border-radius: 6px; }
-  .control-section-label { font-size: 11px; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.5px; }
+  .controls { display: flex; gap: 16px; align-items: center; margin-bottom: 8px; justify-content: center; }
+  .control-section { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border: 1px solid #21262d; border-radius: 6px; }
+  .control-section-label { font-size: 11px; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; }
   .control-group { display: flex; align-items: center; gap: 6px; }
   label { font-size: 13px; color: #8b949e; }
   input[type=range] { width: 120px; accent-color: #58a6ff; }
-  .val { font-size: 13px; color: #58a6ff; min-width: 28px; }
+  .val { font-size: 13px; color: #58a6ff; min-width: 90px; }
   button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
   button:hover { background: #30363d; }
   .throughput { margin-bottom: 8px; text-align: center; line-height: 1.2; }
@@ -29,40 +29,41 @@
 <div class="controls">
   <div class="control-section">
     <span class="control-section-label">Producers</span>
+    <!-- Uncomment to show headcount slider:
     <div class="control-group">
-      <label>Count:</label>
+      <label>Headcount:</label>
       <input type="range" id="producers" min="1" max="15" value="5" step="1">
       <span class="val" id="producersVal">5</span>
     </div>
+    -->
+    <input type="hidden" id="producers" value="5">
     <div class="control-group">
       <label>Productivity:</label>
-      <input type="range" id="productivity" min="0.5" max="5" value="2.5" step="0.25">
-      <span class="val" id="productivityVal">2.5s</span>
+      <input type="range" id="productivity" min="1" max="10" value="5" step="1">
+      <span class="val" id="productivityVal">1 PR/day</span>
     </div>
   </div>
   <div class="control-section">
     <span class="control-section-label">Reviewers</span>
+    <!-- Uncomment to show headcount slider:
     <div class="control-group">
-      <label>Count:</label>
+      <label>Headcount:</label>
       <input type="range" id="reviewers" min="1" max="15" value="5" step="1">
       <span class="val" id="reviewersVal">5</span>
     </div>
+    -->
+    <input type="hidden" id="reviewers" value="5">
     <div class="control-group">
-      <label>Latency:</label>
-      <input type="range" id="latency" min="1" max="20" value="4" step="0.5">
-      <span class="val" id="latencyVal">4s</span>
+      <label>Review Speed:</label>
+      <input type="range" id="latency" min="1" max="10" value="5" step="1">
+      <span class="val" id="latencyVal">1 review/day</span>
     </div>
-  </div>
-  <div class="control-group">
-    <label>Speed:</label>
-    <input type="range" id="speed" min="0.25" max="5" value="1" step="0.25">
-    <span class="val" id="speedVal">1x</span>
   </div>
   <button id="reset">Reset</button>
 </div>
 <div class="throughput">
   <div class="throughput-label">Throughput</div>
-  <span id="statThroughput">0</span> <span class="throughput-unit">PRs/min</span>
+  <span id="statThroughput">0</span> <span class="throughput-unit">PRs/day</span>
 </div>
 <canvas id="c"></canvas>
 <script>
@@ -74,18 +75,15 @@ const sliders = {
   productivity: document.getElementById('productivity'),
   reviewers: document.getElementById('reviewers'),
   latency: document.getElementById('latency'),
-  speed: document.getElementById('speed'),
 };
 const vals = {
   producers: document.getElementById('producersVal'),
   productivity: document.getElementById('productivityVal'),
   reviewers: document.getElementById('reviewersVal'),
   latency: document.getElementById('latencyVal'),
-  speed: document.getElementById('speedVal'),
 };
 
-sliders.productivity.addEventListener('input', () => vals.productivity.textContent = sliders.productivity.value + 's');
-sliders.speed.addEventListener('input', () => vals.speed.textContent = sliders.speed.value + 'x');
+sliders.productivity.addEventListener('input', () => vals.productivity.textContent = sliders.productivity.value + 'h');
 
 let W, H;
 function resize() {
@@ -115,8 +113,12 @@ let producerTimers = [];
 
 function getProducerCount() { return parseInt(sliders.producers.value); }
 function getReviewerCount() { return parseInt(sliders.reviewers.value); }
-function getLatency() { return parseFloat(sliders.latency.value) * 1000; }
-function getSpeed() { return parseFloat(sliders.speed.value); }
+// 1 day = 2000ms sim time
+function daysToMs(d) { return d * 2000; }
+// Productivity slider is inverted: higher value = fewer days per PR
+// Exponential: value=5 → 1 PR/day, value=10 → 10 PR/day, value=1 → ~0.16 PR/day
+function getProductivityDays() { return Math.pow(10, (5 - parseFloat(sliders.productivity.value)) / 5); }
+function getReviewDays() { return parseFloat(sliders.latency.value) / 5; }
 
 // Layout helpers
 function producerX() { return 60; }
@@ -142,7 +144,7 @@ class PR {
     this.tx = 0;
     this.ty = 0;
     this.createdAt = simTime;
-    const prod = parseFloat(sliders.productivity.value) * 1000;
+    const prod = daysToMs(getProductivityDays());
     this.writingDuration = prod * (0.6 + Math.random() * 0.8);
     this.enteredQueue = 0;
     this.reviewStartedAt = 0;
@@ -168,7 +170,7 @@ function update(now) {
     producerTimers.push(now - Math.random() * 1500);
   }
 
-  const baseRate = parseFloat(sliders.productivity.value) * 1000;
+  const baseRate = daysToMs(getProductivityDays());
   for (let i = 0; i < nProducers; i++) {
     if (now - producerTimers[i] > baseRate) {
       const pr = new PR(i);
@@ -203,7 +205,7 @@ function update(now) {
         pr.stage = STAGE.IN_REVIEW;
         pr.reviewerIdx = r;
         pr.reviewStartedAt = now;
-        pr.reviewDuration = getLatency() * (0.7 + Math.random() * 0.6);
+        pr.reviewDuration = daysToMs(getReviewDays()) * (0.7 + Math.random() * 0.6);
         busyReviewers.add(r);
         assigned = true;
         break;
@@ -277,10 +279,10 @@ function update(now) {
 function updateExpectedThroughput() {
   const nProducers = getProducerCount();
   const nReviewers = getReviewerCount();
-  const latency = parseFloat(sliders.latency.value);
-  const productivity = parseFloat(sliders.productivity.value);
-  const prodCapacity = (nProducers / productivity) * 60;
-  const reviewCapacity = (nReviewers / latency) * 60;
+  const productivity = getProductivityDays();
+  const reviewDays = getReviewDays();
+  const prodCapacity = nProducers / productivity;
+  const reviewCapacity = nReviewers / reviewDays;
   const expected = Math.min(prodCapacity, reviewCapacity);
   const queueGrowing = prodCapacity > reviewCapacity;
   const el = document.getElementById('statThroughput');
@@ -288,9 +290,9 @@ function updateExpectedThroughput() {
   el.style.color = queueGrowing ? '#ff7b72' : '#7ee787';
 }
 sliders.producers.addEventListener('input', () => { vals.producers.textContent = sliders.producers.value; updateExpectedThroughput(); });
-sliders.productivity.addEventListener('input', () => { vals.productivity.textContent = sliders.productivity.value + 's'; updateExpectedThroughput(); });
+sliders.productivity.addEventListener('input', () => { vals.productivity.textContent = (1 / getProductivityDays()).toFixed(1) + ' PR/day'; updateExpectedThroughput(); });
 sliders.reviewers.addEventListener('input', () => { vals.reviewers.textContent = sliders.reviewers.value; updateExpectedThroughput(); });
-sliders.latency.addEventListener('input', () => { vals.latency.textContent = sliders.latency.value + 's'; updateExpectedThroughput(); });
+sliders.latency.addEventListener('input', () => { vals.latency.textContent = (1 / getReviewDays()).toFixed(1) + ' reviews/day'; updateExpectedThroughput(); });
 updateExpectedThroughput();
 
 function draw() {
@@ -443,7 +445,7 @@ function loop() {
   const realNow = performance.now();
   const dt = realNow - lastRealTime;
   lastRealTime = realNow;
-  simTime += dt * getSpeed();
+  simTime += dt;
   update(simTime);
   draw();
   requestAnimationFrame(loop);
