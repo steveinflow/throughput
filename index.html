@@ -7,65 +7,58 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #0f1117; color: #e1e4e8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
-  h1 { margin: 12px 0 6px; font-size: 22px; font-weight: 600; color: #c9d1d9; }
-  .controls { display: flex; gap: 16px; align-items: center; margin-bottom: 8px; justify-content: center; }
-  .control-section { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border: 1px solid #21262d; border-radius: 6px; }
-  .control-section-label { font-size: 11px; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; }
-  .control-group { display: flex; align-items: center; gap: 6px; }
-  label { font-size: 13px; color: #8b949e; }
-  input[type=range] { width: 120px; accent-color: #58a6ff; }
-  .val { font-size: 13px; color: #58a6ff; min-width: 90px; }
+  .top-bar { display: flex; gap: 16px; align-items: center; margin: 12px 0 8px; justify-content: center; }
   button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
   button:hover { background: #30363d; }
-  .throughput { margin-bottom: 8px; text-align: center; line-height: 1.2; }
-  .throughput-label { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+  .throughput { display: flex; align-items: baseline; gap: 10px; }
+  .throughput-label { font-size: 13px; color: #8b949e; letter-spacing: 1px; }
   .throughput #statThroughput { font-size: 48px; font-weight: 700; }
   .throughput .throughput-unit { font-size: 18px; color: #8b949e; font-weight: 400; }
-  canvas { border-radius: 8px; }
+  .canvas-wrap { position: relative; }
+  canvas { border-radius: 8px; display: block; }
+  .overlay-control { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .overlay-control.left { left: 10px; top: 46px; width: 180px; }
+  .overlay-control.right { right: 10px; top: 46px; width: 180px; }
+  .overlay-control label { font-size: 11px; color: #8b949e; }
+  .stepper { display: flex; align-items: center; gap: 4px; }
+  .stepper-center { display: flex; flex-direction: column; align-items: center; }
+  .stepper-center .stepper-unit { margin-top: -2px; }
+  .stepper button { padding: 2px 8px; font-size: 14px; line-height: 1; min-width: 24px; border-radius: 4px; }
+  .stepper .stepper-val { font-size: 16px; font-weight: 700; color: #e1e4e8; min-width: 24px; text-align: center; padding: 0 4px; }
+  .stepper .stepper-unit { font-size: 11px; color: #8b949e; margin-left: 2px; }
 </style>
 </head>
 <body>
-<h1>PR Throughput Pipeline</h1>
-<div class="controls">
-  <div class="control-section">
-    <span class="control-section-label">Producers</span>
-    <!-- Uncomment to show headcount slider:
-    <div class="control-group">
-      <label>Headcount:</label>
-      <input type="range" id="producers" min="1" max="15" value="5" step="1">
-      <span class="val" id="producersVal">5</span>
-    </div>
-    -->
-    <input type="hidden" id="producers" value="5">
-    <div class="control-group">
-      <label>Productivity:</label>
-      <input type="range" id="productivity" min="1" max="10" value="5" step="1">
-      <span class="val" id="productivityVal">1 PR/day</span>
-    </div>
-  </div>
-  <div class="control-section">
-    <span class="control-section-label">Reviewers</span>
-    <!-- Uncomment to show headcount slider:
-    <div class="control-group">
-      <label>Headcount:</label>
-      <input type="range" id="reviewers" min="1" max="15" value="5" step="1">
-      <span class="val" id="reviewersVal">5</span>
-    </div>
-    -->
-    <input type="hidden" id="reviewers" value="5">
-    <div class="control-group">
-      <label>Review Speed:</label>
-      <input type="range" id="latency" min="1" max="10" value="5" step="1">
-      <span class="val" id="latencyVal">1 review/day</span>
-    </div>
+<div class="top-bar">
+  <div class="throughput">
+    <span class="throughput-label">THROUGHPUT</span>
+    <span id="statThroughput">0</span> <span class="throughput-unit">PRs/day</span>
   </div>
   <button id="reset">Reset</button>
 </div>
-<div class="throughput">
-  <div class="throughput-label">Throughput</div>
-  <span id="statThroughput">0</span> <span class="throughput-unit">PRs/day</span>
+<!-- Hidden inputs for headcount; uncomment the range inputs below to make them adjustable -->
+<input type="hidden" id="producers" value="5">
+<input type="hidden" id="reviewers" value="5">
+<div class="canvas-wrap" id="canvasWrap">
+  <canvas id="c"></canvas>
+  <div class="overlay-control left">
+    <div class="stepper">
+      <button data-slider="productivity" data-dir="-1">-</button>
+      <span class="stepper-center"><span class="stepper-val" id="productivityVal">1</span><span class="stepper-unit">PRs / day</span></span>
+      <button data-slider="productivity" data-dir="1">+</button>
+    </div>
+  </div>
+  <div class="overlay-control right">
+    <div class="stepper">
+      <button data-slider="latency" data-dir="-1">-</button>
+      <span class="stepper-center"><span class="stepper-val" id="latencyVal">1</span><span class="stepper-unit">PRs / day</span></span>
+      <button data-slider="latency" data-dir="1">+</button>
+    </div>
+  </div>
 </div>
-<canvas id="c"></canvas>
+<!-- Hidden range inputs to store values -->
+<input type="range" id="productivity" min="1" max="10" value="1" step="1" style="display:none">
+<input type="range" id="latency" min="1" max="10" value="1" step="1" style="display:none">
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -77,13 +70,20 @@ const sliders = {
   latency: document.getElementById('latency'),
 };
 const vals = {
-  producers: document.getElementById('producersVal'),
   productivity: document.getElementById('productivityVal'),
-  reviewers: document.getElementById('reviewersVal'),
   latency: document.getElementById('latencyVal'),
 };
 
-sliders.productivity.addEventListener('input', () => vals.productivity.textContent = sliders.productivity.value + 'h');
+document.querySelectorAll('.stepper button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const slider = sliders[btn.dataset.slider];
+    const dir = parseInt(btn.dataset.dir);
+    const step = parseFloat(slider.step);
+    const val = parseFloat(slider.value) + dir * step;
+    slider.value = Math.max(slider.min, Math.min(slider.max, val));
+    slider.dispatchEvent(new Event('input'));
+  });
+});
 
 let W, H;
 function resize() {
@@ -115,14 +115,13 @@ function getProducerCount() { return parseInt(sliders.producers.value); }
 function getReviewerCount() { return parseInt(sliders.reviewers.value); }
 // 1 day = 2000ms sim time
 function daysToMs(d) { return d * 2000; }
-// Productivity slider is inverted: higher value = fewer days per PR
-// Exponential: value=5 → 1 PR/day, value=10 → 10 PR/day, value=1 → ~0.16 PR/day
-function getProductivityDays() { return Math.pow(10, (5 - parseFloat(sliders.productivity.value)) / 5); }
-function getReviewDays() { return parseFloat(sliders.latency.value) / 5; }
+// Slider value = rate per day. Days per unit = 1 / value.
+function getProductivityDays() { return 1 / parseFloat(sliders.productivity.value); }
+function getReviewDays() { return 1 / parseFloat(sliders.latency.value); }
 
 // Layout helpers
-function producerX() { return 60; }
-function reviewerX() { return W - 60; }
+function producerX() { return 80; }
+function reviewerX() { return W - 80; }
 function queueCenterX() { return W / 2; }
 function engineerY(index, total) {
   const usable = H - 60;
@@ -218,18 +217,14 @@ function update(now) {
   for (const pr of prs) {
     if (pr.stage === STAGE.IN_REVIEW && now - pr.reviewStartedAt > pr.reviewDuration) {
       pr.stage = STAGE.DONE;
-
-
     }
   }
 
   // Target positions
-  // Writing PRs: next to their producer
   for (const pr of prs) {
     if (pr.stage === STAGE.WRITING) {
       const py = engineerY(pr.producerIdx, nProducers);
       const progress = Math.min(1, (now - pr.createdAt) / pr.writingDuration);
-      const startX = producerX() + ENGINEER_R + 10;
       const endX = producerX() + ENGINEER_R + 10 + 40 * progress;
       pr.tx = endX;
       pr.ty = py - PR_H / 2;
@@ -238,12 +233,12 @@ function update(now) {
 
   // Queued PRs: stack in the middle
   const queuedPrs = prs.filter(p => p.stage === STAGE.QUEUED);
-  const qCenterX = queueCenterX();
+  const qCX = queueCenterX();
   const qPerRow = Math.max(1, Math.floor(120 / (PR_W + PR_GAP)));
   queuedPrs.forEach((pr, i) => {
     const row = Math.floor(i / qPerRow);
     const col = i % qPerRow;
-    pr.tx = qCenterX - (qPerRow * (PR_W + PR_GAP)) / 2 + col * (PR_W + PR_GAP);
+    pr.tx = qCX - (qPerRow * (PR_W + PR_GAP)) / 2 + col * (PR_W + PR_GAP);
     pr.ty = H / 2 - 40 + row * (PR_H + PR_GAP);
   });
 
@@ -256,12 +251,13 @@ function update(now) {
     }
   }
 
-  // Done PRs: fly off to the right and then get removed
-  const donePrs = prs.filter(p => p.stage === STAGE.DONE);
-  for (const pr of donePrs) {
-    pr.tx = W + 50;
-    const ry = engineerY(pr.reviewerIdx >= 0 ? pr.reviewerIdx : 0, nReviewers);
-    pr.ty = ry - PR_H / 2;
+  // Done PRs: fly off right
+  for (const pr of prs) {
+    if (pr.stage === STAGE.DONE) {
+      pr.tx = W + 50;
+      const ry = engineerY(pr.reviewerIdx >= 0 ? pr.reviewerIdx : 0, nReviewers);
+      pr.ty = ry - PR_H / 2;
+    }
   }
 
   // Animate
@@ -289,10 +285,8 @@ function updateExpectedThroughput() {
   el.textContent = expected.toFixed(1);
   el.style.color = queueGrowing ? '#ff7b72' : '#7ee787';
 }
-sliders.producers.addEventListener('input', () => { vals.producers.textContent = sliders.producers.value; updateExpectedThroughput(); });
-sliders.productivity.addEventListener('input', () => { vals.productivity.textContent = (1 / getProductivityDays()).toFixed(1) + ' PR/day'; updateExpectedThroughput(); });
-sliders.reviewers.addEventListener('input', () => { vals.reviewers.textContent = sliders.reviewers.value; updateExpectedThroughput(); });
-sliders.latency.addEventListener('input', () => { vals.latency.textContent = (1 / getReviewDays()).toFixed(1) + ' reviews/day'; updateExpectedThroughput(); });
+sliders.productivity.addEventListener('input', () => { vals.productivity.textContent = sliders.productivity.value; updateExpectedThroughput(); });
+sliders.latency.addEventListener('input', () => { vals.latency.textContent = sliders.latency.value; updateExpectedThroughput(); });
 updateExpectedThroughput();
 
 function draw() {
@@ -302,56 +296,50 @@ function draw() {
   const nReviewers = getReviewerCount();
 
   // Background regions
-  // Producer zone
   ctx.fillStyle = '#161b22';
   ctx.beginPath();
-  ctx.roundRect(10, 10, 130, H - 20, 8);
+  ctx.roundRect(10, 10, 180, H - 20, 8);
   ctx.fill();
 
-  // Queue zone
   const qCenterX = queueCenterX();
   ctx.fillStyle = '#161b22';
   ctx.beginPath();
   ctx.roundRect(qCenterX - 80, 10, 160, H - 20, 8);
   ctx.fill();
 
-  // Reviewer zone
   ctx.fillStyle = '#161b22';
   ctx.beginPath();
-  ctx.roundRect(W - 140, 10, 130, H - 20, 8);
+  ctx.roundRect(W - 190, 10, 180, H - 20, 8);
   ctx.fill();
 
   // Labels
   ctx.fillStyle = '#58a6ff';
-  ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.font = '600 16px -apple-system, BlinkMacSystemFont, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('Producers', 75, 28);
+  ctx.fillText('Producers', 100, 28);
 
   ctx.fillStyle = '#ffa657';
-  ctx.fillText('Queue', qCenterX, 28);
+  ctx.fillText('Blocked', qCenterX, 28);
 
   ctx.fillStyle = '#7ee787';
-  ctx.fillText('Reviewers', W - 75, 28);
+  ctx.fillText('Reviewers', W - 100, 28);
 
-  // Draw flow arrows
+  // Flow arrows
   ctx.strokeStyle = '#30363d';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([4, 4]);
-  // Producer -> Queue
   ctx.beginPath();
-  ctx.moveTo(145, H / 2);
+  ctx.moveTo(195, H / 2);
   ctx.lineTo(qCenterX - 85, H / 2);
   ctx.stroke();
-  // Queue -> Reviewer
   ctx.beginPath();
   ctx.moveTo(qCenterX + 85, H / 2);
-  ctx.lineTo(W - 145, H / 2);
+  ctx.lineTo(W - 195, H / 2);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Arrowheads
   ctx.fillStyle = '#30363d';
-  for (const ax of [qCenterX - 85, W - 145]) {
+  for (const ax of [qCenterX - 85, W - 195]) {
     ctx.beginPath();
     ctx.moveTo(ax - 5, H / 2 - 4);
     ctx.lineTo(ax + 1, H / 2);
@@ -360,16 +348,14 @@ function draw() {
     ctx.fill();
   }
 
-  // Draw producer engineers
+  // Producer engineers
   for (let i = 0; i < nProducers; i++) {
     const y = engineerY(i, nProducers);
     const x = producerX();
-    // Circle avatar
     ctx.fillStyle = COLORS[i % COLORS.length];
     ctx.beginPath();
     ctx.arc(x, y, ENGINEER_R, 0, Math.PI * 2);
     ctx.fill();
-    // Label
     ctx.fillStyle = '#0f1117';
     ctx.font = 'bold 12px -apple-system, sans-serif';
     ctx.textAlign = 'center';
@@ -377,12 +363,10 @@ function draw() {
     ctx.fillText('P' + (i + 1), x, y);
   }
 
-  // Draw reviewer engineers
+  // Reviewer engineers
   for (let i = 0; i < nReviewers; i++) {
     const y = engineerY(i, nReviewers);
     const x = reviewerX();
-
-    // Check if busy
     const busy = prs.some(p => p.stage === STAGE.IN_REVIEW && p.reviewerIdx === i);
 
     ctx.fillStyle = busy ? COLORS[(i + 5) % COLORS.length] : '#30363d';
@@ -414,7 +398,6 @@ function draw() {
     ctx.roundRect(pr.x, pr.y, PR_W, PR_H, 3);
     ctx.fill();
 
-    // Progress bar for in-review
     if (pr.stage === STAGE.IN_REVIEW) {
       const progress = Math.min(1, (simTime - pr.reviewStartedAt) / pr.reviewDuration);
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
