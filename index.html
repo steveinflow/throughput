@@ -9,6 +9,7 @@
   body { background: #0f1117; color: #e1e4e8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
   button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
   button:hover { background: #30363d; }
+  .stepper button:hover { background: #21262d; }
   .throughput { display: flex; align-items: baseline; gap: 10px; margin: 12px 0 8px; justify-content: center; }
   .throughput-label { font-size: 18px; color: #8b949e; letter-spacing: 1px; }
   .throughput #statThroughput { font-size: 64px; font-weight: 700; }
@@ -41,16 +42,18 @@
   <div class="overlay-control left">
     <div class="stepper">
       <button data-slider="productivity" data-dir="-1">-</button>
-      <span class="stepper-center"><span class="stepper-val" id="productivityVal">1</span><span class="stepper-unit">PRs / day</span></span>
+      <span class="stepper-center"><span class="stepper-val" id="productivityVal">1</span></span>
       <button data-slider="productivity" data-dir="1">+</button>
     </div>
+    <label>PRs / eng /day</label>
   </div>
   <div class="overlay-control right">
     <div class="stepper">
       <button data-slider="latency" data-dir="-1">-</button>
-      <span class="stepper-center"><span class="stepper-val" id="latencyVal">1</span><span class="stepper-unit">PRs / day</span></span>
+      <span class="stepper-center"><span class="stepper-val" id="latencyVal">1</span></span>
       <button data-slider="latency" data-dir="1">+</button>
     </div>
+    <label>PRs / eng /day</label>
   </div>
 </div>
 <!-- Hidden range inputs to store values -->
