@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR Throughput Pipeline</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0f1117; color: #e1e4e8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
+  h1 { margin: 12px 0 6px; font-size: 22px; font-weight: 600; color: #c9d1d9; }
+  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; justify-content: center; }
+  .control-section { display: flex; gap: 12px; align-items: center; padding: 4px 12px; border: 1px solid #21262d; border-radius: 6px; }
+  .control-section-label { font-size: 11px; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.5px; }
+  .control-group { display: flex; align-items: center; gap: 6px; }
+  label { font-size: 13px; color: #8b949e; }
+  input[type=range] { width: 120px; accent-color: #58a6ff; }
+  .val { font-size: 13px; color: #58a6ff; min-width: 28px; }
+  button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #30363d; }
+  .throughput { margin-bottom: 8px; text-align: center; line-height: 1.2; }
+  .throughput-label { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+  .throughput #statThroughput { font-size: 48px; font-weight: 700; }
+  .throughput .throughput-unit { font-size: 18px; color: #8b949e; font-weight: 400; }
+  canvas { border-radius: 8px; }
+</style>
+</head>
+<body>
+<h1>PR Throughput Pipeline</h1>
+<div class="controls">
+  <div class="control-section">
+    <span class="control-section-label">Producers</span>
+    <div class="control-group">
+      <label>Count:</label>
+      <input type="range" id="producers" min="1" max="15" value="5" step="1">
+      <span class="val" id="producersVal">5</span>
+    </div>
+    <div class="control-group">
+      <label>Productivity:</label>
+      <input type="range" id="productivity" min="0.5" max="5" value="2.5" step="0.25">
+      <span class="val" id="productivityVal">2.5s</span>
+    </div>
+  </div>
+  <div class="control-section">
+    <span class="control-section-label">Reviewers</span>
+    <div class="control-group">
+      <label>Count:</label>
+      <input type="range" id="reviewers" min="1" max="15" value="5" step="1">
+      <span class="val" id="reviewersVal">5</span>
+    </div>
+    <div class="control-group">
+      <label>Latency:</label>
+      <input type="range" id="latency" min="1" max="20" value="4" step="0.5">
+      <span class="val" id="latencyVal">4s</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label>Speed:</label>
+    <input type="range" id="speed" min="0.25" max="5" value="1" step="0.25">
+    <span class="val" id="speedVal">1x</span>
+  </div>
+  <button id="reset">Reset</button>
+</div>
+<div class="throughput">
+  <div class="throughput-label">Throughput</div>
+  <span id="statThroughput">0</span> <span class="throughput-unit">PRs/min</span>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const sliders = {
+  producers: document.getElementById('producers'),
+  productivity: document.getElementById('productivity'),
+  reviewers: document.getElementById('reviewers'),
+  latency: document.getElementById('latency'),
+  speed: document.getElementById('speed'),
+};
+const vals = {
+  producers: document.getElementById('producersVal'),
+  productivity: document.getElementById('productivityVal'),
+  reviewers: document.getElementById('reviewersVal'),
+  latency: document.getElementById('latencyVal'),
+  speed: document.getElementById('speedVal'),
+};
+
+sliders.productivity.addEventListener('input', () => vals.productivity.textContent = sliders.productivity.value + 's');
+sliders.speed.addEventListener('input', () => vals.speed.textContent = sliders.speed.value + 'x');
+
+let W, H;
+function resize() {
+  W = Math.min(window.innerWidth - 16, 1200);
+  H = Math.min(window.innerHeight - 130, 650);
+  canvas.width = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+const COLORS = ['#58a6ff','#f78166','#d2a8ff','#7ee787','#ffa657','#ff7b72','#79c0ff','#56d364','#e3b341','#bc8cff'];
+const PR_W = 28, PR_H = 14, PR_GAP = 3;
+const ENGINEER_R = 18;
+const STAGE = { WRITING: 0, QUEUED: 1, IN_REVIEW: 2, DONE: 3 };
+
+let prs = [];
+let nextId = 0;
+let simTime = 0;
+let lastRealTime = 0;
+
+// Each producer has its own creation timer
+let producerTimers = [];
+
+function getProducerCount() { return parseInt(sliders.producers.value); }
+function getReviewerCount() { return parseInt(sliders.reviewers.value); }
+function getLatency() { return parseFloat(sliders.latency.value) * 1000; }
+function getSpeed() { return parseFloat(sliders.speed.value); }
+
+// Layout helpers
+function producerX() { return 60; }
+function reviewerX() { return W - 60; }
+function queueCenterX() { return W / 2; }
+function engineerY(index, total) {
+  const usable = H - 60;
+  const gap = Math.min(usable / Math.max(total, 1), 50);
+  const totalH = gap * (total - 1);
+  const startY = (H - totalH) / 2;
+  return startY + index * gap;
+}
+
+class PR {
+  constructor(producerIdx) {
+    this.id = nextId++;
+    this.color = COLORS[this.id % COLORS.length];
+    this.stage = STAGE.WRITING;
+    this.producerIdx = producerIdx;
+    this.reviewerIdx = -1;
+    this.x = 0;
+    this.y = 0;
+    this.tx = 0;
+    this.ty = 0;
+    this.createdAt = simTime;
+    const prod = parseFloat(sliders.productivity.value) * 1000;
+    this.writingDuration = prod * (0.6 + Math.random() * 0.8);
+    this.enteredQueue = 0;
+    this.reviewStartedAt = 0;
+    this.reviewDuration = 0;
+  }
+}
+
+function reset() {
+  prs = [];
+  nextId = 0;
+  simTime = 0;
+  lastRealTime = performance.now();
+  producerTimers = [];
+}
+document.getElementById('reset').addEventListener('click', reset);
+
+function update(now) {
+  const nProducers = getProducerCount();
+  const nReviewers = getReviewerCount();
+
+  // Ensure producer timers array matches count
+  while (producerTimers.length < nProducers) {
+    producerTimers.push(now - Math.random() * 1500);
+  }
+
+  const baseRate = parseFloat(sliders.productivity.value) * 1000;
+  for (let i = 0; i < nProducers; i++) {
+    if (now - producerTimers[i] > baseRate) {
+      const pr = new PR(i);
+      const py = engineerY(i, nProducers);
+      pr.x = producerX() + ENGINEER_R + 10;
+      pr.y = py - PR_H / 2;
+      pr.tx = pr.x;
+      pr.ty = pr.y;
+      prs.push(pr);
+      producerTimers[i] = now;
+    }
+  }
+
+  // Writing -> Queued
+  for (const pr of prs) {
+    if (pr.stage === STAGE.WRITING && now - pr.createdAt > pr.writingDuration) {
+      pr.stage = STAGE.QUEUED;
+      pr.enteredQueue = now;
+    }
+  }
+
+  // Assign queued PRs to free reviewers
+  const busyReviewers = new Set();
+  for (const pr of prs) {
+    if (pr.stage === STAGE.IN_REVIEW) busyReviewers.add(pr.reviewerIdx);
+  }
+  const queued = prs.filter(p => p.stage === STAGE.QUEUED);
+  for (const pr of queued) {
+    let assigned = false;
+    for (let r = 0; r < nReviewers; r++) {
+      if (!busyReviewers.has(r)) {
+        pr.stage = STAGE.IN_REVIEW;
+        pr.reviewerIdx = r;
+        pr.reviewStartedAt = now;
+        pr.reviewDuration = getLatency() * (0.7 + Math.random() * 0.6);
+        busyReviewers.add(r);
+        assigned = true;
+        break;
+      }
+    }
+    if (!assigned) break;
+  }
+
+  // Complete reviews
+  for (const pr of prs) {
+    if (pr.stage === STAGE.IN_REVIEW && now - pr.reviewStartedAt > pr.reviewDuration) {
+      pr.stage = STAGE.DONE;
+
+
+    }
+  }
+
+  // Target positions
+  // Writing PRs: next to their producer
+  for (const pr of prs) {
+    if (pr.stage === STAGE.WRITING) {
+      const py = engineerY(pr.producerIdx, nProducers);
+      const progress = Math.min(1, (now - pr.createdAt) / pr.writingDuration);
+      const startX = producerX() + ENGINEER_R + 10;
+      const endX = producerX() + ENGINEER_R + 10 + 40 * progress;
+      pr.tx = endX;
+      pr.ty = py - PR_H / 2;
+    }
+  }
+
+  // Queued PRs: stack in the middle
+  const queuedPrs = prs.filter(p => p.stage === STAGE.QUEUED);
+  const qCenterX = queueCenterX();
+  const qPerRow = Math.max(1, Math.floor(120 / (PR_W + PR_GAP)));
+  queuedPrs.forEach((pr, i) => {
+    const row = Math.floor(i / qPerRow);
+    const col = i % qPerRow;
+    pr.tx = qCenterX - (qPerRow * (PR_W + PR_GAP)) / 2 + col * (PR_W + PR_GAP);
+    pr.ty = H / 2 - 40 + row * (PR_H + PR_GAP);
+  });
+
+  // In-review PRs: next to their reviewer
+  for (const pr of prs) {
+    if (pr.stage === STAGE.IN_REVIEW) {
+      const ry = engineerY(pr.reviewerIdx, nReviewers);
+      pr.tx = reviewerX() - ENGINEER_R - 10 - PR_W - 30;
+      pr.ty = ry - PR_H / 2;
+    }
+  }
+
+  // Done PRs: fly off to the right and then get removed
+  const donePrs = prs.filter(p => p.stage === STAGE.DONE);
+  for (const pr of donePrs) {
+    pr.tx = W + 50;
+    const ry = engineerY(pr.reviewerIdx >= 0 ? pr.reviewerIdx : 0, nReviewers);
+    pr.ty = ry - PR_H / 2;
+  }
+
+  // Animate
+  for (const pr of prs) {
+    pr.x += (pr.tx - pr.x) * 0.1;
+    pr.y += (pr.ty - pr.y) * 0.1;
+  }
+
+  // Remove offscreen done PRs
+  prs = prs.filter(p => !(p.stage === STAGE.DONE && p.x > W + 20));
+
+  updateExpectedThroughput();
+}
+
+function updateExpectedThroughput() {
+  const nProducers = getProducerCount();
+  const nReviewers = getReviewerCount();
+  const latency = parseFloat(sliders.latency.value);
+  const productivity = parseFloat(sliders.productivity.value);
+  const prodCapacity = (nProducers / productivity) * 60;
+  const reviewCapacity = (nReviewers / latency) * 60;
+  const expected = Math.min(prodCapacity, reviewCapacity);
+  const queueGrowing = prodCapacity > reviewCapacity;
+  const el = document.getElementById('statThroughput');
+  el.textContent = expected.toFixed(1);
+  el.style.color = queueGrowing ? '#ff7b72' : '#7ee787';
+}
+sliders.producers.addEventListener('input', () => { vals.producers.textContent = sliders.producers.value; updateExpectedThroughput(); });
+sliders.productivity.addEventListener('input', () => { vals.productivity.textContent = sliders.productivity.value + 's'; updateExpectedThroughput(); });
+sliders.reviewers.addEventListener('input', () => { vals.reviewers.textContent = sliders.reviewers.value; updateExpectedThroughput(); });
+sliders.latency.addEventListener('input', () => { vals.latency.textContent = sliders.latency.value + 's'; updateExpectedThroughput(); });
+updateExpectedThroughput();
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  const nProducers = getProducerCount();
+  const nReviewers = getReviewerCount();
+
+  // Background regions
+  // Producer zone
+  ctx.fillStyle = '#161b22';
+  ctx.beginPath();
+  ctx.roundRect(10, 10, 130, H - 20, 8);
+  ctx.fill();
+
+  // Queue zone
+  const qCenterX = queueCenterX();
+  ctx.fillStyle = '#161b22';
+  ctx.beginPath();
+  ctx.roundRect(qCenterX - 80, 10, 160, H - 20, 8);
+  ctx.fill();
+
+  // Reviewer zone
+  ctx.fillStyle = '#161b22';
+  ctx.beginPath();
+  ctx.roundRect(W - 140, 10, 130, H - 20, 8);
+  ctx.fill();
+
+  // Labels
+  ctx.fillStyle = '#58a6ff';
+  ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Producers', 75, 28);
+
+  ctx.fillStyle = '#ffa657';
+  ctx.fillText('Queue', qCenterX, 28);
+
+  ctx.fillStyle = '#7ee787';
+  ctx.fillText('Reviewers', W - 75, 28);
+
+  // Draw flow arrows
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  // Producer -> Queue
+  ctx.beginPath();
+  ctx.moveTo(145, H / 2);
+  ctx.lineTo(qCenterX - 85, H / 2);
+  ctx.stroke();
+  // Queue -> Reviewer
+  ctx.beginPath();
+  ctx.moveTo(qCenterX + 85, H / 2);
+  ctx.lineTo(W - 145, H / 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arrowheads
+  ctx.fillStyle = '#30363d';
+  for (const ax of [qCenterX - 85, W - 145]) {
+    ctx.beginPath();
+    ctx.moveTo(ax - 5, H / 2 - 4);
+    ctx.lineTo(ax + 1, H / 2);
+    ctx.lineTo(ax - 5, H / 2 + 4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Draw producer engineers
+  for (let i = 0; i < nProducers; i++) {
+    const y = engineerY(i, nProducers);
+    const x = producerX();
+    // Circle avatar
+    ctx.fillStyle = COLORS[i % COLORS.length];
+    ctx.beginPath();
+    ctx.arc(x, y, ENGINEER_R, 0, Math.PI * 2);
+    ctx.fill();
+    // Label
+    ctx.fillStyle = '#0f1117';
+    ctx.font = 'bold 12px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('P' + (i + 1), x, y);
+  }
+
+  // Draw reviewer engineers
+  for (let i = 0; i < nReviewers; i++) {
+    const y = engineerY(i, nReviewers);
+    const x = reviewerX();
+
+    // Check if busy
+    const busy = prs.some(p => p.stage === STAGE.IN_REVIEW && p.reviewerIdx === i);
+
+    ctx.fillStyle = busy ? COLORS[(i + 5) % COLORS.length] : '#30363d';
+    ctx.beginPath();
+    ctx.arc(x, y, ENGINEER_R, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (busy) {
+      ctx.shadowColor = COLORS[(i + 5) % COLORS.length];
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(x, y, ENGINEER_R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.fillStyle = busy ? '#0f1117' : '#8b949e';
+    ctx.font = 'bold 12px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('R' + (i + 1), x, y);
+  }
+
+  // Draw PRs
+  for (const pr of prs) {
+    ctx.fillStyle = pr.color;
+    ctx.beginPath();
+    ctx.roundRect(pr.x, pr.y, PR_W, PR_H, 3);
+    ctx.fill();
+
+    // Progress bar for in-review
+    if (pr.stage === STAGE.IN_REVIEW) {
+      const progress = Math.min(1, (simTime - pr.reviewStartedAt) / pr.reviewDuration);
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath();
+      ctx.roundRect(pr.x + 2, pr.y + PR_H - 4, PR_W - 4, 2.5, 1);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.roundRect(pr.x + 2, pr.y + PR_H - 4, (PR_W - 4) * progress, 2.5, 1);
+      ctx.fill();
+    }
+  }
+
+  // Queue count badge
+  const inQueue = prs.filter(p => p.stage === STAGE.QUEUED).length;
+  if (inQueue > 0) {
+    ctx.fillStyle = '#ffa657';
+    ctx.font = 'bold 11px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(inQueue + ' waiting', qCenterX, 42);
+  }
+
+  ctx.textBaseline = 'alphabetic';
+}
+
+function loop() {
+  const realNow = performance.now();
+  const dt = realNow - lastRealTime;
+  lastRealTime = realNow;
+  simTime += dt * getSpeed();
+  update(simTime);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+lastRealTime = performance.now();
+loop();
+</script>
+</body>
+</html>
