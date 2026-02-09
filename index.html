@@ -16,20 +16,21 @@
   .canvas-wrap { position: relative; }
   canvas { border-radius: 8px; display: block; }
   .overlay-control { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-  .overlay-control.left { left: 10px; top: 46px; width: 180px; }
-  .overlay-control.right { right: 10px; top: 46px; width: 180px; }
+  .overlay-control.left { left: 10px; top: 76px; width: 260px; }
+  .overlay-control.right { right: 10px; top: 76px; width: 260px; }
   .overlay-control label { font-size: 11px; color: #8b949e; }
   .stepper { display: flex; align-items: center; gap: 4px; }
   .stepper-center { display: flex; flex-direction: column; align-items: center; }
   .stepper-center .stepper-unit { margin-top: -2px; }
-  .stepper button { padding: 4px 12px; font-size: 20px; line-height: 1; min-width: 32px; border-radius: 4px; }
+  .stepper button { padding: 4px 12px; font-size: 20px; line-height: 1; min-width: 32px; border-radius: 4px; transition: background 0.1s, transform 0.1s; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; }
+  .stepper button.pressed { background: #484f58; transform: scale(0.9); }
   .stepper .stepper-val { font-size: 28px; font-weight: 700; color: #e1e4e8; min-width: 32px; text-align: center; padding: 0 6px; }
   .stepper .stepper-unit { font-size: 14px; color: #8b949e; margin-left: 2px; }
 </style>
 </head>
 <body>
 <div class="throughput">
-  <span class="throughput-label">THROUGHPUT</span>
+  <span class="throughput-label">Throughput:</span>
   <span id="statThroughput">0</span> <span class="throughput-unit">PRs/day</span>
 </div>
 <!-- Hidden inputs for headcount; uncomment the range inputs below to make them adjustable -->
@@ -71,14 +72,20 @@ const vals = {
 };
 
 document.querySelectorAll('.stepper button').forEach(btn => {
-  btn.addEventListener('click', () => {
+  function step() {
     const slider = sliders[btn.dataset.slider];
     const dir = parseInt(btn.dataset.dir);
-    const step = parseFloat(slider.step);
-    const val = parseFloat(slider.value) + dir * step;
+    const s = parseFloat(slider.step);
+    const val = parseFloat(slider.value) + dir * s;
     slider.value = Math.max(slider.min, Math.min(slider.max, val));
     slider.dispatchEvent(new Event('input'));
-  });
+  }
+  function press() { btn.classList.add('pressed'); }
+  function release() { btn.classList.remove('pressed'); }
+  btn.addEventListener('pointerdown', (e) => { e.preventDefault(); press(); step(); });
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointerleave', release);
+  btn.addEventListener('pointercancel', release);
 });
 
 let W, H;
@@ -116,8 +123,8 @@ function getProductivityDays() { return 1 / parseFloat(sliders.productivity.valu
 function getReviewDays() { return 1 / parseFloat(sliders.latency.value); }
 
 // Layout helpers
-function producerX() { return 80; }
-function reviewerX() { return W - 80; }
+function producerX() { return 100; }
+function reviewerX() { return W - 100; }
 function queueCenterX() { return W / 2; }
 function engineerY(index, total) {
   const usable = H - 60;
@@ -285,50 +292,52 @@ function draw() {
   const nReviewers = getReviewerCount();
 
   // Background regions
+  const zoneW = 260;
   ctx.fillStyle = '#161b22';
   ctx.beginPath();
-  ctx.roundRect(10, 10, 180, H - 20, 8);
+  ctx.roundRect(10, 10, zoneW, H - 20, 8);
   ctx.fill();
 
   const qCenterX = queueCenterX();
+  const qZoneW = 240;
   ctx.fillStyle = '#161b22';
   ctx.beginPath();
-  ctx.roundRect(qCenterX - 80, 10, 160, H - 20, 8);
+  ctx.roundRect(qCenterX - qZoneW / 2, 10, qZoneW, H - 20, 8);
   ctx.fill();
 
   ctx.fillStyle = '#161b22';
   ctx.beginPath();
-  ctx.roundRect(W - 190, 10, 180, H - 20, 8);
+  ctx.roundRect(W - 10 - zoneW, 10, zoneW, H - 20, 8);
   ctx.fill();
 
   // Labels
   ctx.fillStyle = '#58a6ff';
   ctx.font = '600 20px -apple-system, BlinkMacSystemFont, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('Producers', 100, 28);
+  ctx.fillText('Producers', 10 + zoneW / 2, 42);
 
   ctx.fillStyle = '#ffa657';
-  ctx.fillText('Blocked', qCenterX, 28);
+  ctx.fillText('Blocked', qCenterX, 42);
 
   ctx.fillStyle = '#7ee787';
-  ctx.fillText('Reviewers', W - 100, 28);
+  ctx.fillText('Reviewers', W - 10 - zoneW / 2, 42);
 
   // Flow arrows
   ctx.strokeStyle = '#30363d';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
-  ctx.moveTo(195, H / 2);
-  ctx.lineTo(qCenterX - 85, H / 2);
+  ctx.moveTo(10 + zoneW + 5, H / 2);
+  ctx.lineTo(qCenterX - qZoneW / 2 - 5, H / 2);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(qCenterX + 85, H / 2);
-  ctx.lineTo(W - 195, H / 2);
+  ctx.moveTo(qCenterX + qZoneW / 2 + 5, H / 2);
+  ctx.lineTo(W - 10 - zoneW - 5, H / 2);
   ctx.stroke();
   ctx.setLineDash([]);
 
   ctx.fillStyle = '#30363d';
-  for (const ax of [qCenterX - 85, W - 195]) {
+  for (const ax of [qCenterX - qZoneW / 2 - 5, W - 10 - zoneW - 5]) {
     ctx.beginPath();
     ctx.moveTo(ax - 5, H / 2 - 4);
     ctx.lineTo(ax + 1, H / 2);
@@ -407,7 +416,7 @@ function draw() {
     ctx.font = 'bold 18px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(inQueue + ' waiting', qCenterX, 42);
+    ctx.fillText(inQueue + ' waiting', qCenterX, 66);
   }
 
   ctx.textBaseline = 'alphabetic';
